@@ -30,11 +30,106 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "log.h"
 #include "evsched.h"
 #include "uci_helper.h"
+#include "iwinfo.h"
 
 static bool needReset = true;  /* On start-up, we need to initialize DB from  the UCI */
 
 static struct target_radio_ops g_rops;
 static bool g_resync_ongoing = false;
+
+static bool wifi_getTxChainMask(int radioIndex, int *txChainMask)
+{
+    char command[64];
+    FILE *fp = NULL;
+    int fsize = 0;
+    char *buffer=NULL;
+    char *point=NULL;
+
+    memset(command, 0, 64);
+
+    sprintf(command,"iw phy%d info | grep 'Available Antennas' > /tmp/antennainfo.txt", radioIndex);
+
+    if(system(command) == -1)
+    {
+	return false;
+    }
+
+    fp = fopen("/tmp/antennainfo.txt","r");
+
+    if(fp != NULL)
+    {
+	fseek(fp, 0, SEEK_END);
+	fsize = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	buffer = malloc(fsize+1);
+	fread(buffer, 1, fsize, fp);
+	buffer[fsize] = 0;
+	fclose(fp);
+
+	point = strstr(buffer, "0x");
+	point = point + 2;
+        sscanf(point, "%d", txChainMask);
+
+	return true;
+    }
+
+    return false;
+}
+
+static void wifi_getRadioAllowedChannel(int radioIndex, int *allowedChannelList, int *allowedChannelListLen)
+{
+
+    char radio_if_name[6];
+    char buf[IWINFO_BUFSIZE];
+    int  buflen;
+    int  numberOfChannels=0;
+    struct iwinfo_freqlist_entry  *freq_list    = NULL;
+
+    memset(radio_if_name, 0, sizeof(radio_if_name));
+
+    if(radioIndex == 0)
+    {
+	strncpy(radio_if_name, "wlan0", sizeof(radio_if_name));
+    }
+    else if(radioIndex == 1)
+    {
+	strncpy(radio_if_name, "wlan1", sizeof(radio_if_name));
+    }
+    else if(radioIndex == 2)
+    {
+	strncpy(radio_if_name, "wlan2", sizeof(radio_if_name));
+    }
+    else
+    {
+	return;
+    }
+
+    // find iwinfo type
+    const char *if_type = iwinfo_type(radio_if_name);
+    const struct iwinfo_ops *winfo_ops = iwinfo_backend_by_name(if_type);
+
+    if(0 != winfo_ops->freqlist(radio_if_name, buf, &buflen))
+    {
+	return;
+    }
+
+    freq_list = (struct iwinfo_freqlist_entry *)buf;
+
+    for(int i = 0; i < buflen; i += sizeof(struct iwinfo_freqlist_entry))
+    {
+	allowedChannelList[numberOfChannels] = freq_list->channel;
+
+	LOGN("iwinfo :radio channel: %d", freq_list->channel);
+	LOGN("iwinfo : state: radio channel: %d", allowedChannelList[numberOfChannels]);
+	freq_list++;
+	numberOfChannels++;
+    }
+
+    *allowedChannelListLen = numberOfChannels;
+
+    return;
+
+}
 
 static bool radio_state_get(
         int radioIndex,
@@ -104,10 +199,16 @@ static bool radio_state_get(
     rstate->freq_band_exists = true;
     rstate->hw_mode_exists = true;
 #endif
- 
+    wifi_getRadioAllowedChannel(radioIndex, rstate->allowed_channels, &(rstate->allowed_channels_len));
+
     if (UCI_OK == wifi_getRadioFreqBand(radioIndex, rstate->freq_band)) {
 	rstate->freq_band_exists = true;
         LOGN("radio freq band: %s", rstate->freq_band);
+    }
+
+    if(wifi_getTxChainMask(radioIndex, &(rstate->tx_chainmask))) {
+	rstate->tx_chainmask_exists = true;
+        LOGN("tx_chainmask: %d", rstate->tx_chainmask);
     }
 
     if (UCI_OK == wifi_getRadioHtMode(radioIndex, rstate->ht_mode)) {

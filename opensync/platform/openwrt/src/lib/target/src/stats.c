@@ -151,7 +151,7 @@ bool target_stats_clients_get(
 
 		ds_dlist_insert_tail(client_list, client_entry);
 
-		(*client_cb)(client_list, client_ctx, true);
+
 
 		LOGN("%s:%d mac.%02x:%02x:%02x:%02x:%02x:%02x", __func__, __LINE__,
 				assoc_client->mac[0],
@@ -164,7 +164,9 @@ bool target_stats_clients_get(
 		assoc_client++;
 	}
 
-	return true;
+        (*client_cb)(client_list, client_ctx, true);
+
+        return true;
 }
 
 bool target_stats_clients_convert(
@@ -250,7 +252,7 @@ bool target_stats_survey_convert(
 /******************************************************************************
  *  NEIGHBORS definitions
  *****************************************************************************/
-uint32_t channel_to_freq(uint32_t chan)
+static uint32_t channel_to_freq(uint32_t chan)
 {
     uint32_t channel[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 132, 136, 140, 144, 149, 153, 157, 161, 165};
     uint32_t freq[] = {2412, 2417, 2422, 2427, 2432, 2437, 2442, 2447, 2452, 2457, 2462, 5180, 5200, 5220, 5240, 5260, 5280, 5300, 5320, 5500, 5520, 5540, 5560, 5580, 5660, 5680, 5700, 5720, 5745, 5765, 5785, 5805, 5825 };
@@ -303,7 +305,7 @@ bool target_stats_scan_start(
     {
 
     (*scan_cb)(scan_ctx, false);
-
+    LOGN("SCAN FAILED");
     return false;
 
     }
@@ -320,8 +322,20 @@ bool target_stats_scan_stop(
     char command[64];
 
     memset(command, 0, strlen(command));
-    sprintf(command,"iw %s scan abort", radio_cfg->if_name);
-    
+
+    if(strcmp(radio_cfg->if_name, "home-ap-24") == 0)
+    {
+    sprintf(command,"iw wlan1 scan abort");
+    }
+    else if(strcmp(radio_cfg->if_name, "home-ap-l50") == 0)
+    {
+    sprintf(command,"iw wlan2 scan abort");
+    }
+    else if(strcmp(radio_cfg->if_name, "home-ap-u50") == 0)
+    {
+    sprintf(command,"iw wlan0 scan abort");
+    }
+
     LOGN("stop scan command : %s", command);
     if(system(command) == -1)
     return false;
@@ -345,7 +359,7 @@ bool target_stats_scan_get(
     char sig[4];
     char lastseen[12];
     char ssid[32];
-    char channwidth[4];
+    //char channwidth[4];
     char TSF[20];
 
     memset(command, 0, strlen(command));
@@ -398,34 +412,52 @@ bool target_stats_scan_get(
      neighbor->entry.type        = radio_cfg->type;
 
      tmp = strstr(tmp,"BSS");
+     if(tmp!=NULL)
+     {
      tmp = tmp + 4;
      strncpy(neighbor->entry.bssid, tmp, 17);
+     }
 
      tmp = strstr(tmp,"TSF");
+     if(tmp!=NULL)
+     {
      tmp = tmp + 4;
      sscanf(tmp, "%s", TSF);
-     neighbor->entry.tsf = atoi(TSF);
+     neighbor->entry.tsf = atoll(TSF);
+     }
      
      tmp = strstr(tmp,"signal");
+     if(tmp!=NULL)
+     {
      tmp = tmp + 8;
      strncpy(sig, tmp, 3);
      neighbor->entry.sig = atoi(sig);
+     }
 
      tmp = strstr(tmp,"last seen");
+     if(tmp!=NULL)
+     {
      tmp = tmp + 11;
      sscanf(tmp, "%s", lastseen);
      neighbor->entry.lastseen    = atoi(lastseen);
+     }
 
      tmp = strstr(tmp,"SSID");
+     if(tmp!=NULL)
+     {
      tmp = tmp + 6;
      sscanf(tmp, "%s", ssid);
      strncpy(neighbor->entry.ssid, ssid, 32);
-
-
+     }
+     /*  In some cases channel width is missing so causes a crash
      tmp = strstr(tmp,"STA channel width");
+     if(tmp!=NULL)
+     {
      tmp = tmp + 19;
      sscanf(tmp, "%s", channwidth);
      neighbor->entry.chanwidth   = atoi(channwidth);
+     }
+     */
      neighbor->entry.chan        = chan_list[0];
      
      ds_dlist_insert_tail(&scan_results->list, neighbor);
