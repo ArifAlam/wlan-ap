@@ -28,7 +28,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdio.h>
 #include <stdbool.h>
 #include "iwinfo.h"
-#include "string.h"
 
 #define NUM_MAX_CLIENTS 10
 
@@ -151,8 +150,6 @@ bool target_stats_clients_get(
 
 		ds_dlist_insert_tail(client_list, client_entry);
 
-
-
 		LOGN("%s:%d mac.%02x:%02x:%02x:%02x:%02x:%02x", __func__, __LINE__,
 				assoc_client->mac[0],
 				assoc_client->mac[1],
@@ -252,6 +249,7 @@ bool target_stats_survey_convert(
 /******************************************************************************
  *  NEIGHBORS definitions
  *****************************************************************************/
+
 static uint32_t channel_to_freq(uint32_t chan)
 {
     uint32_t channel[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 132, 136, 140, 144, 149, 153, 157, 161, 165};
@@ -262,9 +260,10 @@ static uint32_t channel_to_freq(uint32_t chan)
       if(channel[i] == chan)
       return freq[i];
     }
-    
+
     return 0;
 }
+
 
 bool target_stats_scan_start(
         radio_entry_t *radio_cfg,
@@ -275,6 +274,7 @@ bool target_stats_scan_start(
         target_scan_cb_t *scan_cb,
         void *scan_ctx)
 {
+
     char command[64];
     uint32_t frequency;
     memset(command, 0, strlen(command));
@@ -311,7 +311,7 @@ bool target_stats_scan_start(
     }
 
     (*scan_cb)(scan_ctx, true);
-   
+
     return true;
 }
 
@@ -338,7 +338,9 @@ bool target_stats_scan_stop(
 
     LOGN("stop scan command : %s", command);
     if(system(command) == -1)
-    return false;
+    {
+	return false;
+    }
 
     return true;
 }
@@ -350,7 +352,6 @@ bool target_stats_scan_get(
         radio_scan_type_t scan_type,
         dpp_neighbor_report_data_t *scan_results)
 {
-
     char command[128];
     FILE *fp=NULL;
     long int fsize;
@@ -387,12 +388,6 @@ bool target_stats_scan_get(
       fp = fopen("/tmp/scanwlan0.dump","r");
     }
 
-    if(fp==NULL)
-    {
-      LOG(ERR,"Failed to open scan dump files");
-      return false;
-    }
-
     fseek(fp, 0, SEEK_END);
     fsize = ftell(fp);
     fseek(fp, 0, SEEK_SET);
@@ -425,7 +420,7 @@ bool target_stats_scan_get(
      sscanf(tmp, "%s", TSF);
      neighbor->entry.tsf = atoll(TSF);
      }
-     
+
      tmp = strstr(tmp,"signal");
      if(tmp!=NULL)
      {
@@ -459,7 +454,7 @@ bool target_stats_scan_get(
      }
      */
      neighbor->entry.chan        = chan_list[0];
-     
+
      ds_dlist_insert_tail(&scan_results->list, neighbor);
     }
 
@@ -530,7 +525,6 @@ bool target_stats_device_fanrpm_get(uint32_t *fan_rpm)
     return true;
 }
 
-
 /******************************************************************************
  *  CAPACITY definitions
  *****************************************************************************/
@@ -554,3 +548,4 @@ bool target_stats_capacity_convert(
 {
     return true;
 }
+
