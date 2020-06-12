@@ -932,7 +932,7 @@ bool vif_state_get(int ssidIndex, struct schema_Wifi_VIF_State *vstate)
 
     // mac (w/ exists)
     memset(buf, 0, sizeof(buf));
-    ret = wifi_getBaseBSSID(ssidIndex, buf, sizeof(buf));
+    ret = wifi_getBaseBSSID(ssidIndex, buf, sizeof(buf),radio_idx);
     if (ret != UCI_OK)
     {
         LOGN("%s: Failed to get base BSSID (mac)", ssid_ifname);

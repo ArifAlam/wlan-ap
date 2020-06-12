@@ -119,7 +119,10 @@ static bool radio_state_get(
         rstate->hw_mode_exists = true;
         LOGN("radio hw mode: %s", rstate->hw_mode);
     }
-
+    if(UCI_OK == wifi_getRadioMacaddress(radioIndex, rstate->mac)){
+        rstate->mac_exists = true;
+        LOGN("radio mac address:%s", rstate->mac);
+    }
     snprintf(rstate->country, sizeof(rstate->country),"CA");
     rstate->country_exists = true;
 

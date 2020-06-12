@@ -241,6 +241,34 @@ int wifi_getRadioFreqBand(int radio_idx, char *freq_band)
    }
    return rc;
 }
+int wifi_getRadioMacaddress(int radio_idx, char *mac)
+{
+    int rc = UCI_OK;
+    FILE *fd=NULL;
+    char buff[18];
+    char file_name[30];
+    if(radio_idx >= UCI_MAX_RADIOS)
+    {
+        LOG(ERR,"Maximum Radios Exceeded");
+        return rc = UCI_ERR_UNKNOWN;
+    }
+    snprintf(file_name,sizeof(file_name),"/sys/class/net/wlan%d/address",radio_idx);
+    fd=fopen(file_name,"r");
+    if(fd == NULL)
+    {
+        LOG(ERR,"Failed to open mac address input files");
+        return rc=UCI_ERR_UNKNOWN;
+    }
+    if(fscanf(fd,"%s",buff) == EOF)
+    {
+        LOG(ERR,"Mac Address reading failed");
+        fclose(fd);
+        return rc = UCI_ERR_UNKNOWN;
+    }
+    fclose(fd);
+    strcpy(mac,buff);
+    return rc;
+}
 
 int wifi_getRadioHtMode(int radio_idx, char *ht_mode)
 {
@@ -557,9 +585,42 @@ bool wifi_setApSsidAdvertisementEnable(int ssid_index, bool enabled)
     return uci_write(WIFI_TYPE, WIFI_VIF_SECTION, ssid_index, "hidden", val);
 }
 
-int wifi_getBaseBSSID(int ssid_index,char *buf, size_t buf_len)
+int wifi_getBaseBSSID(int ssid_index,char *buf, size_t buf_len, int radio_idx)
 {
-    return( uci_read(WIFI_TYPE, WIFI_VIF_SECTION, ssid_index, "bssid", buf, buf_len));
+    int rc=uci_read(WIFI_TYPE, WIFI_VIF_SECTION, ssid_index, "bssid", buf, buf_len);
+
+    if(UCI_OK != rc)
+    {
+    int rc = UCI_OK;
+    FILE *fd=NULL;
+    char addr[18];
+    char file_name[30];
+
+    if(radio_idx >= UCI_MAX_RADIOS)
+    {
+        LOG(ERR,"Maximum Radios Exceeded");
+        return rc = UCI_ERR_UNKNOWN;
+    }
+    snprintf(file_name,sizeof(file_name),"/sys/class/net/wlan%d/address",radio_idx);
+    fd=fopen(file_name,"r");
+
+    if(fd == NULL)
+    {
+        LOG(ERR,"Failed to open mac address input files");
+        return rc=UCI_ERR_UNKNOWN;
+    }
+
+    if(fscanf(fd,"%s",addr) == EOF)
+    {
+        LOG(ERR,"Mac Address reading failed");
+        fclose(fd);
+        return rc = UCI_ERR_UNKNOWN;
+    }
+    fclose(fd);
+    strcpy(buf,addr);
+    return rc;
+    }
+    return rc;
 }
 
 bool wifi_setSSIDName(int ssid_index, char* ssidName)
