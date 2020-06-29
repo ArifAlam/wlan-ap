@@ -119,8 +119,8 @@ static void wifi_getRadioAllowedChannel(int radioIndex, int *allowedChannelList,
     {
 	allowedChannelList[numberOfChannels] = freq_list->channel;
 
-	LOGN("iwinfo :radio channel: %d", freq_list->channel);
-	LOGN("iwinfo : state: radio channel: %d", allowedChannelList[numberOfChannels]);
+	LOGD("iwinfo :radio channel: %d", freq_list->channel);
+	LOGD("iwinfo : state: radio channel: %d", allowedChannelList[numberOfChannels]);
 	freq_list++;
 	numberOfChannels++;
     }
