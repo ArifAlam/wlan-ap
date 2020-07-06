@@ -159,7 +159,48 @@ int uci_remove(char* type, char* section, int section_index, char* option)
     uci_free_context(ctx);
     return rc;
 }
+bool uci_write_list(char* type, char* section, int section_index, char * option, char *uci_value)
+{
+    struct uci_ptr ptr;
+    struct uci_context *ctx;
+    char   uci_cmd[80];
+    int rc;
 
+    if (!uci_value)  return UCI_ERR_MEM;
+
+    snprintf(uci_cmd,sizeof(uci_cmd),"%s.@%s[%d].%s", type, section, section_index, option);
+    LOGN("UCI command write list: %s value: %s", uci_cmd, uci_value );
+
+    ctx = uci_alloc_context();
+    if (!ctx) return false;
+
+    if ((rc = uci_lookup_ptr(ctx, &ptr, uci_cmd, true)) != UCI_OK ||
+            (ptr.o == NULL || ptr.o->type != UCI_TYPE_LIST))
+    {
+        /* Handle new option creation case */
+        ptr.option = option;
+    }
+
+    ptr.value = uci_value;
+
+    if ((rc = uci_add_list(ctx, &ptr)) != UCI_OK)
+    {
+        LOGN("UCI write %s.@%s[%d].%s error: %d", type, section, section_index, option, rc);
+        uci_free_context(ctx);
+        return false;
+    }
+
+    // TODO: Might want to put commit in its own function
+    if ((rc = uci_commit(ctx, &ptr.p, false)) != UCI_OK)
+    {
+        LOGN("UCI write list %s.@%s[%d].%s commit error: %d", type, section, section_index, option, rc);
+        uci_free_context(ctx);
+        return false;
+    }
+
+    uci_free_context(ctx);
+    return true;
+}
 bool uci_add_write(char* type, char* section)
 {
     struct uci_ptr ptr;
@@ -187,9 +228,45 @@ bool uci_add_write(char* type, char* section)
     }
 
     uci_free_context(ctx);
-
     return true;
+}
 
+int uci_read_list(char* type, char* section, int section_index, char* option, char dest_list[][64] ,int max_entries,int max_size,int *nentry)
+{
+    struct uci_ptr ptr;
+    struct uci_context *ctx;
+    char   uci_cmd[80];
+    int rc,i=0;
+
+    snprintf(uci_cmd,sizeof(uci_cmd),"%s.@%s[%d].%s", type, section, section_index, option);
+    LOGD("UCI command read list: %s", uci_cmd );
+
+    ctx = uci_alloc_context();
+    if (!ctx) return false;
+
+    if ((rc = uci_lookup_ptr(ctx, &ptr, uci_cmd, true)) != UCI_OK ||
+            (ptr.o == NULL || ptr.o->type != UCI_TYPE_LIST))
+    {
+        LOGN("UCI read %s.@%s[%d].%s failed: %d", type, section, section_index, option, rc);
+        uci_free_context(ctx);
+        return UCI_ERR_NOTFOUND;
+    }
+    if (ptr.flags & UCI_LOOKUP_COMPLETE)
+    {
+        struct uci_element *n;
+        uci_foreach_element(&(ptr.o->v.list),n)
+        {
+            strncpy(dest_list[i],n->name, max_size);
+            i++;
+            if(i>=max_entries)
+                break;
+        }
+    } else {
+        LOGN("UCI read %s.@%s[%d].%s not complete: %d", type, section, section_index, option, rc);
+    }
+    *nentry=i;
+    uci_free_context(ctx);
+    return rc;
 }
 
 bool uci_write_nw(char* type, char* section, char * option, char *uci_value)
@@ -200,7 +277,6 @@ bool uci_write_nw(char* type, char* section, char * option, char *uci_value)
     int rc;
 
     if (!uci_value)  return UCI_ERR_MEM;
-
     if (!option)
         snprintf(uci_cmd,sizeof(uci_cmd),"%s.%s", type, section);
     else
@@ -212,6 +288,7 @@ bool uci_write_nw(char* type, char* section, char * option, char *uci_value)
     if (!ctx) return false;
 
     if ((rc = uci_lookup_ptr(ctx, &ptr, uci_cmd, true)) != UCI_OK ||
+
             (ptr.o == NULL || ptr.o->v.string == NULL))
     {
          /* Handle new option creation case */
@@ -789,7 +866,27 @@ int wifi_getApBridgeInfo(int ssid_index, char *bridge_info, char *tmp1, char *tm
 {
     return( uci_read(WIFI_TYPE, WIFI_VIF_SECTION, ssid_index, "network", bridge_info, bridge_info_len));
 }
-
+int wifi_getMacFilter(int ssid_index,char *maclisttype)
+{
+    int rc;
+    char type[15];
+    rc=uci_read(WIFI_TYPE, WIFI_VIF_SECTION, ssid_index, "macfilter", type, sizeof(type));
+    if(rc == UCI_OK)
+    {
+       if(! strcmp(type,"allow")){
+            strcpy(maclisttype,"whitelist");
+        }else if(! strcmp(type,"deny")){
+            strcpy(maclisttype,"blacklist");
+        }else {
+            strcpy(maclisttype,"none");
+            rc=UCI_OK;
+        }
+    } else {
+        strcpy(maclisttype,"none");
+        rc=UCI_OK;
+    }
+    return rc;
+}
 int wifi_getApIsolationEnable(int ssid_index, bool *enabled)
 {
     int rc;
@@ -817,6 +914,52 @@ bool wifi_setApIsolationEnable(int ssid_index, bool enabled)
     LOGN("wifi_setApIsolationEnable =  %s", val);
 
     return uci_write(WIFI_TYPE, WIFI_VIF_SECTION, ssid_index, "isolate", val);
+}
+
+bool wifi_setMacFilter(int ssid_index, const char *mactype)
+{
+    char mactp[15];
+    int rc;
+    if(! strcmp(mactype,"none"))
+    {
+        strcpy(mactp,"disable");
+    }
+    else if(! strcmp(mactype,"whitelist"))
+    {
+        strcpy(mactp,"allow");
+    }
+    else if(! strcmp(mactype,"blacklist"))
+    {
+        strcpy(mactp,"deny");
+    }
+    else
+    {
+        return UCI_ERR_IO;
+    }
+    rc = uci_write(WIFI_TYPE, WIFI_VIF_SECTION, ssid_index, "macfilter", mactp);
+    return rc;
+}
+
+int wifi_getMacList(int ssid_index, struct schema_Wifi_VIF_State *vstate)
+{
+    int rc;
+    int nentries=0;
+    int maxentries=64;
+    int maxsize=64;
+    rc = uci_read_list(WIFI_TYPE, WIFI_VIF_SECTION, ssid_index, "maclist",vstate->mac_list, maxsize, maxentries,&nentries);
+    vstate->mac_list_len = nentries;
+    return rc;
+}
+
+bool wifi_setMacList(int ssid_index,const struct schema_Wifi_VIF_Config *vconf)
+{
+    int rc,i;
+    rc=uci_remove(WIFI_TYPE, WIFI_VIF_SECTION, ssid_index, "maclist");
+    for(i=0;i<vconf->mac_list_len;i++)
+    {
+        rc = uci_write_list(WIFI_TYPE, WIFI_VIF_SECTION, ssid_index, "maclist",(char*)vconf->mac_list[i]);
+    }
+    return rc;
 }
 
 int wifi_getApSsidAdvertisementEnable(int ssid_index, bool *enabled)
@@ -885,14 +1028,12 @@ int wifi_getBaseBSSID(int ssid_index,char *buf, size_t buf_len, int radio_idx)
     }
     return rc;
 }
-
 bool wifi_setSSIDName(int ssid_index, char* ssidName)
 {
     return uci_write(WIFI_TYPE, WIFI_VIF_SECTION, ssid_index, "ssid", ssidName);
 }
 
-bool wifi_setApSecurityModeEnabled(int ssid_index,
-        const struct schema_Wifi_VIF_Config *vconf)
+bool wifi_setApSecurityModeEnabled(int ssid_index, const struct schema_Wifi_VIF_Config *vconf)
 {
     bool rc = true;
     const char *encryption = SCHEMA_KEY_VAL(vconf->security, SCHEMA_CONSTS_SECURITY_ENCRYPT);
@@ -974,8 +1115,7 @@ int wifi_getApSecurityKeyPassphrase(int ssid_index, char *buf, size_t buf_len)
     return(uci_read(WIFI_TYPE, WIFI_VIF_SECTION, ssid_index, "key", buf, buf_len));
 }
 
-bool wifi_getApSecurityRadiusServer(
-        int ssid_index, char *radius_ip, char *radius_port, char *radius_secret)
+bool wifi_getApSecurityRadiusServer(int ssid_index, char *radius_ip, char *radius_port, char *radius_secret)
 {
     UCI_READ(WIFI_TYPE, WIFI_VIF_SECTION, ssid_index, "server", radius_ip, UCI_BUFFER_SIZE);
     UCI_READ(WIFI_TYPE, WIFI_VIF_SECTION, ssid_index, "port", radius_port, UCI_BUFFER_SIZE);

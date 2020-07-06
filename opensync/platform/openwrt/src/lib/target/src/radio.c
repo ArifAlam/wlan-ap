@@ -31,11 +31,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "evsched.h"
 #include "uci_helper.h"
 
+
 static bool needReset = true;  /* On start-up, we need to initialize DB from  the UCI */
 
 static struct target_radio_ops g_rops;
 static bool g_resync_ongoing = false;
-
 
 static bool radio_state_get(
         int radioIndex,

@@ -29,6 +29,7 @@
 #define UCI_BUFFER_SIZE 80
 #define DEFAULT_ENC_MODE        "TKIPandAESEncryption"
 #define UCI_MAX_RADIOS 4
+#define UCI_MAX_SSID UCI_MAX_RADIOS*8
 
 typedef enum {
   eFreqBand_24G = 0,
@@ -108,6 +109,8 @@ int wifi_getBaseBSSID(int ssid_index,char *buf, size_t buf_len,int radio_idx);
 int wifi_getApSecurityKeyPassphrase(int ssid_index, char *buf, size_t buf_len);
 bool wifi_getApSecurityModeEnabled(int ssid_index, char *buf, size_t buf_len);
 bool wifi_getApSecurityRadiusServer(int ssid_index, char *radius_ip, char *radius_port, char *radius_secret);
+int wifi_getMacFilter(int ssid_index,char *maclisttype);
+int wifi_getMacList(int ssid_index, struct schema_Wifi_VIF_State *vstate);
 bool wifi_setFtMode(int ssid_index, const struct schema_Wifi_VIF_Config *vconf);
 bool wifi_getApVlanId(int ssidIndex, int *vlan_id);
 
@@ -119,6 +122,8 @@ bool wifi_setApSecurityModeEnabled(int ssid_index, const struct schema_Wifi_VIF_
 bool wifi_setApSsidAdvertisementEnable(int ssid_index, bool enabled);
 bool wifi_setApIsolationEnable(int ssid_index, bool enabled);
 bool wifi_setSsidEnabled(int ssid_index, bool enabled);
+bool wifi_setMacFilter(int ssid_index, const char *mactype);
+bool wifi_setMacList(int ssid_index,const struct schema_Wifi_VIF_Config *vconf);
 bool wifi_setApBridgeInfo(int ssid_index, char *bridge_info);
 bool wifi_setApVlanNetwork(int ssid_index, int vlan_id);
 

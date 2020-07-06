@@ -109,133 +109,6 @@ static c_item_t map_security[] =
 };
 
 #if 0
-static bool acl_to_state(
-        INT ssid_index,
-        char *ssid_ifname,
-        struct schema_Wifi_VIF_State *vstate)
-{
-    char                    acl_buf[ACL_BUF_SIZE];
-    char                    *p;
-    char                    *s = NULL;
-    INT                     acl_mode;
-    INT                     status = RETURN_ERR;
-    INT                     i;
-
-    status = wifi_getApMacAddressControlMode(ssid_index, &acl_mode);
-    if (status != RETURN_OK)
-    {
-        LOGE("%s: Failed to get ACL mode", ssid_ifname);
-        return false;
-    }
-
-    STRSCPY(vstate->mac_list_type,
-            c_get_str_by_key(map_acl_modes, acl_mode));
-    if (strlen(vstate->mac_list_type) == 0)
-    {
-        LOGE("%s: Unknown ACL mode (%u)", ssid_ifname, acl_mode);
-        return false;
-    }
-    vstate->mac_list_type_exists = true;
-
-    status = wifi_getApAclDevices(ssid_index, acl_buf, sizeof(acl_buf));
-    if (status == RETURN_OK)
-    {
-        if ((strlen(acl_buf) + 2) > sizeof(acl_buf))
-        {
-            LOGE("%s: ACL List too long for buffer size!", ssid_ifname);
-            return false;
-        }
-        strcat(acl_buf, ",");
-
-        i = 0;
-        p = strtok_r(acl_buf, ",\n", &s);
-        while (p)
-        {
-            if (strlen(p) == 0)
-            {
-                break;
-            }
-            else if (strlen(p) != 17)
-            {
-                LOGW("%s: ACL has malformed MAC \"%s\"", ssid_ifname, p);
-            }
-            else
-            {
-                STRSCPY(vstate->mac_list[i], p);
-                i++;
-            }
-
-            p = strtok_r(NULL, ",\n", &s);
-        }
-        vstate->mac_list_len = i;
-    }
-
-    return true;
-}
-
-static bool acl_apply(
-        INT ssid_index,
-        const char *ssid_ifname,
-        const struct schema_Wifi_VIF_Config *vconf)
-{
-    c_item_t                *citem;
-    INT                     acl_mode;
-    INT                     ret;
-    INT                     i;
-
-    // !!! XXX: Cannot touch ACL for home interfaces, since they are currently
-    //          used for band steering.
-    if (!strncmp(ssid_ifname, "home-ap-", 8))
-    {
-        // Don't touch ACL
-        return true;
-    }
-
-    // Set ACL type from mac_list_type
-    if (vconf->mac_list_type_exists)
-    {
-        if (!(citem = c_get_item_by_str(map_acl_modes, vconf->mac_list_type)))
-        {
-            LOGE("%s: Failed to set ACL type (mac_list_type '%s' unknown)",
-                 ssid_ifname, vconf->mac_list_type);
-            return false;
-        }
-        acl_mode = (INT)citem->key;
-
-        ret = wifi_setApMacAddressControlMode(ssid_index, acl_mode);
-        LOGD("[WIFI_HAL SET] wifi_setApMacAddressControlMode(%d, %d) = %d",
-                                              ssid_index, acl_mode, ret);
-        if (ret != RETURN_OK)
-        {
-            LOGE("%s: Failed to set ACL Mode (%d)", ssid_ifname, acl_mode);
-            return false;
-        }
-    }
-
-    if (vconf->mac_list_len > 0)
-    {
-        // First, flush the table
-        ret = wifi_delApAclDevices(ssid_index);
-        LOGD("[WIFI_HAL SET] wifi_delApAclDevices(%d) = %d",
-                                   ssid_index, ret);
-
-        // Set ACL list
-        for (i = 0; i < vconf->mac_list_len; i++)
-        {
-            ret = wifi_addApAclDevice(ssid_index, (char *)vconf->mac_list[i]);
-            LOGD("[WIFI_HAL SET] wifi_addApAclDevice(%d, \"%s\") = %d",
-                                      ssid_index, vconf->mac_list[i], ret);
-            if (ret != RETURN_OK)
-            {
-                LOGW("%s: Failed to add \"%s\" to ACL", ssid_ifname, vconf->mac_list[i]);
-            }
-        }
-    }
-
-    return true;
-}
-
-
 static const char* security_conf_find_by_key(
         const struct schema_Wifi_VIF_Config *vconf,
         char *key)
@@ -253,6 +126,7 @@ static const char* security_conf_find_by_key(
     return NULL;
 }
 #endif
+
 static int set_security_key_value(
         struct schema_Wifi_VIF_State *vstate,
         int index,
@@ -665,7 +539,7 @@ bool vif_copy_to_config(
         struct schema_Wifi_VIF_State *vstate,
         struct schema_Wifi_VIF_Config *vconf)
 {
-    int i;
+    int i,j;
 
     memset(vconf, 0, sizeof(*vconf));
     schema_Wifi_VIF_Config_mark_all_present(vconf);
@@ -703,7 +577,8 @@ bool vif_copy_to_config(
     LOGT("vconf->rrm = %d", vconf->rrm);
     SCHEMA_SET_INT(vconf->btm, vstate->btm);
     LOGT("vconf->btm = %d", vconf->btm);
-
+    SCHEMA_SET_STR(vconf->mac_list_type, vstate->mac_list_type);
+    LOGT("vconf->mac_list_type = %s", vconf->mac_list_type);
     // security, security_keys, security_len
     for (i = 0; i < vstate->security_len; i++)
     {
@@ -711,12 +586,10 @@ bool vif_copy_to_config(
         STRSCPY(vconf->security[i],      vstate->security[i]);
     }
     vconf->security_len = vstate->security_len;
-
-    // mac_list, mac_list_len
-    SCHEMA_SET_STR(vconf->mac_list_type, vstate->mac_list_type);
-    for (i = 0; i < vstate->mac_list_len; i++)
+    //Mac_List Type and Mac_List
+    for (j = 0; j < vstate->mac_list_len; j++)
     {
-        STRSCPY(vconf->mac_list[i], vstate->mac_list[i]);
+        strcpy(vconf->mac_list[j], vstate->mac_list[j]);
     }
     vconf->mac_list_len = vstate->mac_list_len;
 
@@ -779,6 +652,28 @@ bool vif_state_get(int ssidIndex, struct schema_Wifi_VIF_State *vstate)
         LOGW("Cannot getApBridgeInfo for SSID index %d", ssidIndex);
         vstate->bridge_exists = false;
     }
+    //Mac List type
+    memset(buf,0,sizeof(buf));
+    ret = wifi_getMacFilter(ssidIndex,buf);
+    if(ret == UCI_OK)
+    {
+        vstate->mac_list_type_exists = true;
+        SCHEMA_SET_STR(vstate->mac_list_type, buf);
+    }else
+    {
+        LOGW("Cannot getMaclisttype for SSID index %d", ssidIndex);
+        vstate->mac_list_type_exists = false;
+    }
+    //Mac List get
+    ret = wifi_getMacList(ssidIndex,vstate);
+    if(ret == UCI_OK)
+    {
+        LOGN("Mac List STATE completed for SSID index %d", ssidIndex);
+    }
+    else
+    {
+        LOGW("Cannot getMaclist for SSID index %d", ssidIndex);
+    }
 
     // vlan_id (w/ exists)
     ret = wifi_getApVlanId(ssidIndex, &vlan_id);
@@ -804,7 +699,6 @@ bool vif_state_get(int ssidIndex, struct schema_Wifi_VIF_State *vstate)
     {
         LOGW("Cannot getApIsolationEnable for SSID index %d", ssidIndex);
     }
-
     // vif_radio_idx (w/ exists)
     (void) wifi_getSSIDRadioIndex( ssidIndex, &radio_idx );
     SCHEMA_SET_INT(vstate->vif_radio_idx, radio_idx);
@@ -838,25 +732,6 @@ bool vif_state_get(int ssidIndex, struct schema_Wifi_VIF_State *vstate)
     {
         LOGW("%s: cannot get security for %s", __func__, ssid_ifname);
     }
-#if 0
-    // mac_list_type (w/ exists)
-    // mac_list, mac_list_len
-    if (!acl_to_state(ssidIndex, ssid_ifname, vstate))
-    {
-        LOGW("%s: cannot get ACL for %s", __func__, ssid_ifname);
-    }
-
-    ret = wifi_getSSIDRadioIndex(ssidIndex, &radio_idx);
-    if (ret != UCI_OK)
-    {
-        LOGE("%s: cannot get radio idx for SSID %s\n", __func__, ssid_ifname);
-        return false;
-    }
-#endif
-
-    strscpy(vstate->mac_list_type, "none", sizeof(vstate->mac_list_type));
-    vstate->mac_list_len = 0;
-    vstate->mac_list_type_exists = true;
  
 #if 0
     memset(band, 0, sizeof(band));
@@ -1085,7 +960,7 @@ bool target_vif_config_set2(
             bval = citem->key ? true : false;
             ret = wifi_setApSsidAdvertisementEnable(ssid_index, bval);
             LOGI("[WIFI_HAL SET] wifi_setApSsidAdvertisementEnable(%d, %d) = %d",
-                                                    ssid_index, bval, ret);
+                    ssid_index, bval, ret);
             if (ret != true)
             {
                 LOGW("%s: Failed to set SSID Broadcast to '%d'", ssid_ifname, bval);
@@ -1098,7 +973,7 @@ bool target_vif_config_set2(
         else
         {
             LOGW("%s: Failed to decode ssid_broadcast \"%s\"",
-                 ssid_ifname, vconf->ssid_broadcast);
+                    ssid_ifname, vconf->ssid_broadcast);
         }
     }
 
@@ -1124,7 +999,7 @@ bool target_vif_config_set2(
     {
         ret = wifi_setApIsolationEnable(ssid_index, vconf->ap_bridge);
         LOGI("[WIFI_HAL SET] wifi_setApIsolationEnable(%d, %d) = %d",
-                                               ssid_index, vconf->ap_bridge, ret);
+                ssid_index, vconf->ap_bridge, ret);
         if (ret != true)
         {
             LOGW("%s: Failed to set AP bridge to '%d'", ssid_ifname, bval);
@@ -1132,6 +1007,27 @@ bool target_vif_config_set2(
         else
         {
             LOGN("%s: Updated AP bridge to %d", ssid_ifname, bval);
+        }
+    }
+    if(vconf->mac_list_type_exists)
+    {
+        ret = wifi_setMacFilter(ssid_index, vconf->mac_list_type);
+        if (ret!=true)
+        {
+            LOGW("%s: Failed to set Mac list Type to '%s'", ssid_ifname,vconf->mac_list_type);
+        }
+        else
+        {
+            LOGN("%s: Updated to set Mac list Type to '%s'", ssid_ifname, vconf->mac_list_type);
+        }
+        ret = wifi_setMacList(ssid_index,vconf);
+        if (ret!=true)
+        {
+            LOGW("%s: Failed to update Mac list for '%s'", ssid_ifname,vconf->mac_list_type);
+        }
+        else
+        {
+            LOGN("%s: Updated Mac list for '%s'", ssid_ifname, vconf->mac_list_type);
         }
     }
 
